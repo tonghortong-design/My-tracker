@@ -104,8 +104,9 @@ if os.path.exists(FILE_NAME):
                 
             with tab2:
                 st.write("#### 每日花費走勢")
+                # 這裡把欄位對齊，修正為正確的「日期」欄位
                 df_trend = expense_df.groupby(expense_df['日期'].dt.strftime('%Y-%m-%d'))["金額"].sum().reset_index()
-                fig_line = px.line(df_trend, x="記帳日期", y="金額", markers=True)
+                fig_line = px.line(df_trend, x="日期", y="金額", markers=True)
                 st.plotly_chart(fig_line, use_container_width=True)
         else:
             st.info("當前篩選範圍內沒有任何支出紀錄，無法產生圖表。")
@@ -127,11 +128,9 @@ if os.path.exists(FILE_NAME):
         
         # 用循環一行一行印出資料，並在後面加一個刪除按鈕
         for idx, row in display_df.iterrows():
-            # 用小區塊美化每行外觀
             with st.container():
                 c1, c2, c3, c4, c5 = st.columns([2, 1, 3, 2, 1])
                 c1.write(f"📅 {row['日期']}")
-                # 收入用綠色、支出用紅色標記
                 if row['類型'] == "收入":
                     c2.markdown("🟢")
                 else:
@@ -139,9 +138,8 @@ if os.path.exists(FILE_NAME):
                 c3.write(f"**{row['項目']}** ({row['類別']})")
                 c4.write(f"${float(row['金額']):,.1f}")
                 
-                # 刪除按鈕
+                # 刪除功能
                 if c5.button("🗑️", key=f"del_{row['原始索引']}"):
-                    # 讀取完整資料，刪除該行後存回 CSV
                     full_df = pd.read_csv(FILE_NAME, encoding='utf-8-sig')
                     full_df = full_df.drop(row['原始索引'])
                     full_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
