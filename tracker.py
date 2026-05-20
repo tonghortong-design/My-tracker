@@ -53,28 +53,31 @@ if submit_button:
 # 主畫面：讀取與顯示資料
 if os.path.exists(FILE_NAME):
     try:
-        df = pd.read_csv(FILE_NAME, encoding='utf-8-sig')
+        # 強制讀取時把日期當作字串，方便表格編輯
+        df = pd.read_csv(FILE_NAME, dtype={"日期": str}, encoding='utf-8-sig')
     except:
         df = pd.DataFrame(columns=["日期", "類型", "項目", "類別", "金額"])
     
     if not df.empty:
         st.subheader("📊 歷史帳目查看")
         
-        df['日期'] = pd.to_datetime(df['日期'])
-        df['月份'] = df['日期'].dt.strftime('%Y-%m')
-        df['金額'] = df['金額'].astype(float)
+        # 用於計算看板與圖表的臨時轉換
+        calc_df = df.copy()
+        calc_df['日期'] = pd.to_datetime(calc_df['日期'])
+        calc_df['月份'] = calc_df['日期'].dt.strftime('%Y-%m')
+        calc_df['金額'] = calc_df['金額'].astype(float)
         
-        month_list = ["全部"] + sorted(df['月份'].unique().tolist(), reverse=True)
+        month_list = ["全部"] + sorted(calc_df['月份'].unique().tolist(), reverse=True)
         selected_month = st.selectbox("選擇篩選月份：", month_list)
         
         if selected_month != "全部":
-            filtered_df = df[df['月份'] == selected_month]
+            filtered_calc = calc_df[calc_df['月份'] == selected_month]
         else:
-            filtered_df = df
+            filtered_calc = calc_df
             
         # 計算數據
-        total_income = filtered_df[filtered_df['類型'] == "收入"]['金額'].sum()
-        total_expense = filtered_df[filtered_df['類型'] == "支出"]['金額'].sum()
+        total_income = filtered_calc[filtered_calc['類型'] == "收入"]['金額'].sum()
+        total_expense = filtered_calc[filtered_calc['類型'] == "支出"]['金額'].sum()
         balance = total_income - total_expense
         
         # 數據看板
@@ -90,7 +93,7 @@ if os.path.exists(FILE_NAME):
         st.write("---")
         st.subheader("📈 支出數據圖表分析")
         
-        expense_df = filtered_df[filtered_df['類型'] == "支出"]
+        expense_df = filtered_calc[filtered_calc['類型'] == "支出"]
         
         if not expense_df.empty:
             tab1, tab2 = st.tabs(["🏷️ 類別比例 (圓餅圖)", "📅 每日趨勢 (折線圖)"])
@@ -104,46 +107,42 @@ if os.path.exists(FILE_NAME):
                 
             with tab2:
                 st.write("#### 每日花費走勢")
-                # 這裡把欄位對齊，修正為正確的「日期」欄位
                 df_trend = expense_df.groupby(expense_df['日期'].dt.strftime('%Y-%m-%d'))["金額"].sum().reset_index()
                 fig_line = px.line(df_trend, x="日期", y="金額", markers=True)
                 st.plotly_chart(fig_line, use_container_width=True)
         else:
             st.info("當前篩選範圍內沒有任何支出紀錄，無法產生圖表。")
             
+        # ------------------ 📋 全功能 Excel 編輯區塊 ------------------
         st.write("---")
-        st.subheader("📋 帳目明細與刪除")
+        st.subheader("📋 歷史帳目明細 (雙擊格子可任意修改)")
+        st.caption("💡 提示：你可以直接修改下方表格內的任何文字、日期、類型、金額。改完後記得點擊下方的「💾 儲存所有修改」按鈕！")
         
-        # 給原始的 df 建立一個暫時的索引 ID（用來精準刪除某一行）
-        df['原始索引'] = df.index
+        # 準備供編輯的原始資料，倒序排列讓新資料在上面
+        df_for_edit = df.copy()
+        df_for_edit = df_for_edit.iloc[::-1].reset_index(drop=True)
         
-        # 再次過濾要顯示的部分
-        if selected_month != "全部":
-            display_df = df[df['月份'] == selected_month].copy()
-        else:
-            display_df = df.copy()
+        # 開放編輯表格，並限制選單類型
+        edited_df = st.data_editor(
+            df_for_edit,
+            column_config={
+                "日期": st.column_config.TextColumn("日期 (YYYY-MM-DD)", help="請輸入正確的日期格式"),
+                "類型": st.column_config.SelectboxColumn("類型", options=["支出", "收入"], required=True),
+                "項目": st.column_config.TextColumn("項目名稱"),
+                "類別": st.column_config.SelectboxColumn("類別", options=["飲食", "交通", "娛樂", "購物", "薪水", "獎金", "投資", "零用錢", "其他"]),
+                "金額": st.column_config.NumberColumn("金額 ($)", min_value=0.0, format="$ %.2f"),
+            },
+            use_container_width=True,
+            num_rows="dynamic"  # 允許使用者直接在表格底部新增或選取整行按 Delete 鍵刪除
+        )
+        
+        # 當表格內容有變動時，顯示儲存按鈕
+        if st.button("💾 儲存所有修改", type="primary", use_container_width=True):
+            # 將編輯後的資料反轉回原本的順序存入 CSV
+            final_save_df = edited_df.iloc[::-1].reset_index(drop=True)
+            final_save_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
+            st.success("🎉 所有修改已成功儲存並同步到雲端！")
+            st.rerun()
             
-        display_df['日期'] = display_df['日期'].dt.strftime('%Y-%m-%d')
-        display_df = display_df.sort_values(by="日期", ascending=False)
-        
-        # 用循環一行一行印出資料，並在後面加一個刪除按鈕
-        for idx, row in display_df.iterrows():
-            with st.container():
-                c1, c2, c3, c4, c5 = st.columns([2, 1, 3, 2, 1])
-                c1.write(f"📅 {row['日期']}")
-                if row['類型'] == "收入":
-                    c2.markdown("🟢")
-                else:
-                    c2.markdown("🔴")
-                c3.write(f"**{row['項目']}** ({row['類別']})")
-                c4.write(f"${float(row['金額']):,.1f}")
-                
-                # 刪除功能
-                if c5.button("🗑️", key=f"del_{row['原始索引']}"):
-                    full_df = pd.read_csv(FILE_NAME, encoding='utf-8-sig')
-                    full_df = full_df.drop(row['原始索引'])
-                    full_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
-                    st.success("刪除成功！正在重整...")
-                    st.rerun()
     else:
         st.info("目前還沒有任何紀錄，快從左邊新增第一筆吧！")
