@@ -53,41 +53,50 @@ if submit_button:
 # 主畫面：讀取與顯示資料
 if os.path.exists(FILE_NAME):
     try:
-        # 強制讀取時把日期當作字串，方便表格編輯
         df = pd.read_csv(FILE_NAME, dtype={"日期": str}, encoding='utf-8-sig')
     except:
         df = pd.DataFrame(columns=["日期", "類型", "項目", "類別", "金額"])
     
     if not df.empty:
-        st.subheader("📊 歷史帳目查看")
+        st.subheader("📊 歷史帳目查看與雙重篩選")
         
-        # 用於計算看板與圖表的臨時轉換
+        # 數據轉換處理
         calc_df = df.copy()
         calc_df['日期'] = pd.to_datetime(calc_df['日期'])
         calc_df['月份'] = calc_df['日期'].dt.strftime('%Y-%m')
         calc_df['金額'] = calc_df['金額'].astype(float)
         
-        month_list = ["全部"] + sorted(calc_df['月份'].unique().tolist(), reverse=True)
-        selected_month = st.selectbox("選擇篩選月份：", month_list)
+        # 建立雙排篩選器
+        filter_col1, filter_col2 = st.columns(2)
         
-        if selected_month != "全部":
-            filtered_calc = calc_df[calc_df['月份'] == selected_month]
-        else:
-            filtered_calc = calc_df
+        # 1. 月份篩選
+        month_list = ["全部月份"] + sorted(calc_df['月份'].unique().tolist(), reverse=True)
+        selected_month = filter_col1.selectbox("📅 選擇篩選月份：", month_list)
+        
+        # 2. 核心新增：獨立類別篩選
+        all_categories = ["全部類別"] + sorted(calc_df['類別'].dropna().unique().tolist())
+        selected_category = filter_col2.selectbox("🏷️ 選擇獨立項目類別：", all_categories)
+        
+        # 開始動態篩選資料
+        filtered_calc = calc_df.copy()
+        if selected_month != "全部月份":
+            filtered_calc = filtered_calc[filtered_calc['月份'] == selected_month]
+        if selected_category != "全部類別":
+            filtered_calc = filtered_calc[filtered_calc['類別'] == selected_category]
             
-        # 計算數據
+        # 計算篩選後的數據
         total_income = filtered_calc[filtered_calc['類型'] == "收入"]['金額'].sum()
         total_expense = filtered_calc[filtered_calc['類型'] == "支出"]['金額'].sum()
         balance = total_income - total_expense
         
         # 數據看板
         col1, col2, col3 = st.columns(3)
-        col1.metric(label="🟢 當月總收入", value=f"${total_income:,.2f}")
-        col2.metric(label="🔴 當月總支出", value=f"${total_expense:,.2f}")
+        col1.metric(label="🟢 篩選總收入", value=f"${total_income:,.2f}")
+        col2.metric(label="🔴 篩選總支出", value=f"${total_expense:,.2f}")
         if balance >= 0:
-            col3.metric(label="🙌 當月淨結餘 (存下)", value=f"${balance:,.2f}")
+            col3.metric(label="🙌 篩選淨結餘", value=f"${balance:,.2f}")
         else:
-            col3.metric(label="⚠️ 當月淨結餘 (超支)", value=f"${balance:,.2f}")
+            col3.metric(label="⚠️ 篩選淨結餘", value=f"${balance:,.2f}")
         
         # ------------------ 📈 圖表區塊 ------------------
         st.write("---")
@@ -111,37 +120,63 @@ if os.path.exists(FILE_NAME):
                 fig_line = px.line(df_trend, x="日期", y="金額", markers=True)
                 st.plotly_chart(fig_line, use_container_width=True)
         else:
-            st.info("當前篩選範圍內沒有任何支出紀錄，無法產生圖表。")
+            st.info("當前篩選範圍內沒有支出紀錄（如果只選取收入類別，這裡也會是空的喔）。")
             
         # ------------------ 📋 全功能 Excel 編輯區塊 ------------------
         st.write("---")
-        st.subheader("📋 歷史帳目明細 (雙擊格子可任意修改)")
-        st.caption("💡 提示：你可以直接修改下方表格內的任何文字、日期、類型、金額。改完後記得點擊下方的「💾 儲存所有修改」按鈕！")
+        st.subheader("📋 帳目明細與編輯清單")
+        st.caption("💡 提示：此表格會同步上方的篩選條件。你依然可以雙擊任何格子直接修改變數，改完點擊下方儲存。")
         
-        # 準備供編輯的原始資料，倒序排列讓新資料在上面
-        df_for_edit = df.copy()
-        df_for_edit = df_for_edit.iloc[::-1].reset_index(drop=True)
+        # 為原始的 df 綁定索引，確保過濾後修改不會錯位
+        df['原始索引'] = df.index
         
-        # 開放編輯表格，並限制選單類型
+        # 依照選擇條件同步過濾底部的 Excel 表格
+        df_filtered_edit = df.copy()
+        df_filtered_edit['臨時日期'] = pd.to_datetime(df_filtered_edit['日期'])
+        df_filtered_edit['臨時月份'] = df_filtered_edit['臨時日期'].dt.strftime('%Y-%m')
+        
+        if selected_month != "全部月份":
+            df_filtered_edit = df_filtered_edit[df_filtered_edit['臨時月份'] == selected_month]
+        if selected_category != "全部類別":
+            df_filtered_edit = df_filtered_edit[df_filtered_edit['類別'] == selected_category]
+            
+        # 移除臨時欄位並倒序排列
+        df_filtered_edit = df_filtered_edit.drop(columns=['臨時日期', '臨時月份'])
+        df_filtered_edit = df_filtered_edit.iloc[::-1].reset_index(drop=True)
+        
+        # 顯示可編輯表格
         edited_df = st.data_editor(
-            df_for_edit,
+            df_filtered_edit,
             column_config={
-                "日期": st.column_config.TextColumn("日期 (YYYY-MM-DD)", help="請輸入正確的日期格式"),
+                "原始索引": None,  # 隱藏後台索引不給看
+                "日期": st.column_config.TextColumn("日期 (YYYY-MM-DD)"),
                 "類型": st.column_config.SelectboxColumn("類型", options=["支出", "收入"], required=True),
                 "項目": st.column_config.TextColumn("項目名稱"),
                 "類別": st.column_config.SelectboxColumn("類別", options=["飲食", "交通", "娛樂", "購物", "薪水", "獎金", "投資", "零用錢", "其他"]),
                 "金額": st.column_config.NumberColumn("金額 ($)", min_value=0.0, format="$ %.2f"),
             },
             use_container_width=True,
-            num_rows="dynamic"  # 允許使用者直接在表格底部新增或選取整行按 Delete 鍵刪除
+            num_rows="dynamic"
         )
         
-        # 當表格內容有變動時，顯示儲存按鈕
+        # 儲存修改
         if st.button("💾 儲存所有修改", type="primary", use_container_width=True):
-            # 將編輯後的資料反轉回原本的順序存入 CSV
-            final_save_df = edited_df.iloc[::-1].reset_index(drop=True)
-            final_save_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
-            st.success("🎉 所有修改已成功儲存並同步到雲端！")
+            full_df = pd.read_csv(FILE_NAME, dtype={"日期": str}, encoding='utf-8-sig')
+            
+            # 把使用者在畫面改好的資料，精準寫回完整資料庫中
+            for idx, row in edited_df.iterrows():
+                orig_idx = row['原始索引']
+                full_df.loc[orig_idx, ["日期", "類型", "項目", "類別", "金額"]] = [row["日期"], row["類型"], row["項目"], row["類別"], row["金額"]]
+                
+            # 處理可能被刪除的行數
+            current_visible_orig_indices = edited_df['原始索引'].tolist()
+            # 如果原本存在於這個篩選條件中，但現在在編輯器裡不見了，代表被使用者刪除了
+            for orig_idx in df_filtered_edit['原始索引'].tolist():
+                if orig_idx not in current_visible_orig_indices:
+                    full_df = full_df.drop(orig_idx)
+                    
+            full_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
+            st.success("🎉 篩選後的修改已成功更新到雲端！")
             st.rerun()
             
     else:
