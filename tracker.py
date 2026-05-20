@@ -2,12 +2,23 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
+import requests
+from streamlit_lottie import st_lottie
 
 FILE_NAME = "expense_tracker.csv"
 
-# 初始化資料檔案，確保所有整合欄位齊全
+# 載入 Lottie 動畫的輔助函式
+def load_lottieurl(url: str):
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+# 取得免費且精美的記帳動畫 JSON (金幣與錢包)
+lottie_wallet = load_lottieurl("https://assets5.lottiefiles.com/packages/lf20_y9m8vtas.json")
+
+# 初始化資料檔案
 if not os.path.exists(FILE_NAME):
     df = pd.DataFrame(columns=["日期", "類型", "項目", "類別", "金額", "週期性"])
     df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
@@ -16,13 +27,38 @@ else:
     if "類型" not in df_check.columns:
         df_check.insert(1, "類型", "支出")
     if "週期性" not in df_check.columns:
-        df_check["週期性"] = "單次"
+        df_check["週期性"] = "單次消費"
     df_check.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
 
 # 網頁配置
-st.set_page_config(page_title="極致天天記帳本", page_icon="🏆", layout="centered")
-st.title("🏆 我的全功能智慧記帳本")
-st.caption("🚀 融合全網記帳 App 精華：支援預算控管、固定帳目自動化、Excel級自由變數修改")
+st.set_page_config(page_title="極致動感記帳本", page_icon="🏆", layout="centered")
+
+# 注入 CSS 動畫樣式 (淡入效果)
+st.markdown("""
+    <style>
+    /* 讓主畫面元件擁有流暢的淡入流暢動畫 */
+    .stApp {
+        animation: fadeIn 1.2s ease-in-out;
+    }
+    @keyframes fadeIn {
+        0% { opacity: 0; transform: translateY(10px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    /* 美化進度條 */
+    .stProgress > div > div > div > div {
+        background-image: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# 頂部迎賓區：標題與流暢動態圖卡並排
+col_title, col_anim = st.columns([2, 1])
+with col_title:
+    st.title("🏆 我的智慧動感記帳本")
+    st.caption("🚀 融合全網精華與動態美學：網頁元件已全面啟用 Smooth 淡入動畫效果")
+with col_anim:
+    if lottie_wallet:
+        st_lottie(lottie_wallet, speed=1, reverse=False, loop=True, height=100, key="wallet")
 
 # ================= 側邊欄：新增帳目 =================
 st.sidebar.header("✍️ 新增一筆紀錄")
@@ -38,9 +74,7 @@ with st.sidebar.form(key='expense_form', clear_on_submit=True):
         
     category_input = st.selectbox("項目類別", categories)
     amount_input = st.number_input("金額 ($)", min_value=0.0, step=1.0)
-    
-    # 參考市面 App：新增「固定週期」功能
-    period_input = st.selectbox("這筆帳目的重複週期 (固定自動記帳)", ["單次消費", "每月固定(如房租/薪水)", "每週固定"])
+    period_input = st.selectbox("這筆帳目的重複週期", ["單次消費", "每月固定(如房租/薪水)", "每週固定"])
     
     submit_button = st.form_submit_button(label='確認記帳')
 
@@ -63,19 +97,14 @@ if os.path.exists(FILE_NAME):
     except:
         df = pd.DataFrame(columns=["日期", "類型", "項目", "類別", "金額", "週期性"])
     
-    # 補足空值
-    if "週期性" not in df.columns:
-        df["週期性"] = "單次消費"
     df["週期性"] = df["週期性"].fillna("單次消費")
     
     if not df.empty:
-        # 資料預處理
         calc_df = df.copy()
         calc_df['日期'] = pd.to_datetime(calc_df['日期'])
         calc_df['月份'] = calc_df['日期'].dt.strftime('%Y-%m')
         calc_df['金額'] = calc_df['金額'].astype(float)
         
-        # 頂部雙重動態篩選器
         filter_col1, filter_col2 = st.columns(2)
         month_list = ["全部月份"] + sorted(calc_df['月份'].unique().tolist(), reverse=True)
         selected_month = filter_col1.selectbox("📅 選擇篩選月份：", month_list)
@@ -83,19 +112,16 @@ if os.path.exists(FILE_NAME):
         all_categories = ["全部類別"] + sorted(calc_df['類別'].dropna().unique().tolist())
         selected_category = filter_col2.selectbox("🏷️ 選擇獨立項目類別：", all_categories)
         
-        # 動態過濾
         filtered_calc = calc_df.copy()
         if selected_month != "全部月份":
             filtered_calc = filtered_calc[filtered_calc['月份'] == selected_month]
         if selected_category != "全部類別":
             filtered_calc = filtered_calc[filtered_calc['類別'] == selected_category]
             
-        # 計算核心財務指標
         total_income = filtered_calc[filtered_calc['類型'] == "收入"]['金額'].sum()
         total_expense = filtered_calc[filtered_calc['類型'] == "支出"]['金額'].sum()
         balance = total_income - total_expense
         
-        # 財務核心指標看板
         col1, col2, col3 = st.columns(3)
         col1.metric(label="🟢 總收入", value=f"${total_income:,.2f}")
         col2.metric(label="🔴 總支出", value=f"${total_expense:,.2f}")
@@ -104,26 +130,23 @@ if os.path.exists(FILE_NAME):
         else:
             col3.metric(label="⚠️ 當前呈透支", value=f"${balance:,.2f}")
             
-        # ================= 參考市面精華：智慧預算進度條 =================
         st.write("")
-        with st.expander("🎯 智慧每月預算控管中心 (點擊展開設定)", expanded=False):
+        with st.expander("🎯 智慧每月預算控管中心", expanded=False):
             budget_limit = st.number_input("設定你每個月的「最高支出預算上限」($)", min_value=100.0, value=20000.0, step=500.0)
             if total_expense > budget_limit:
-                st.error(f"🚨 警告：你這個月已經超支了！超額了 ${(total_expense - budget_limit):,.1f}！該省錢囉！")
+                st.error(f"🚨 警告：你這個月已經超支了！超額了 ${(total_expense - budget_limit):,.1f}！")
             elif total_expense >= budget_limit * 0.8:
-                st.warning(f"⚠️ 警報：本月花費已達預算的 {total_expense/budget_limit*100:.1f}%！危險拉警報！")
+                st.warning(f"⚠️ 警報：本月花費已達預算的 {total_expense/budget_limit*100:.1f}%！")
             else:
-                st.success(f"💪 優秀！目前花費僅佔預算的 {total_expense/budget_limit*100:.1f}%，還有 ${budget_limit - total_expense:,.1f} 可以使用。")
-            # 製作精美進度條
+                st.success(f"💪 目前花費僅佔預算的 {total_expense/budget_limit*100:.1f}%，還有 ${budget_limit - total_expense:,.1f} 可以使用。")
             progress_percent = min(1.0, float(total_expense / budget_limit))
             st.progress(progress_percent)
         
-        # ================= 📈 圖表分析區（升級為三大圖表切換） =================
+        # ================= 📈 圖表分析區 =================
         st.write("---")
         st.subheader("📈 智慧數據多元圖表分析")
         
         expense_df = filtered_calc[filtered_calc['類型'] == "支出"]
-        
         tab1, tab2, tab3 = st.tabs(["🏷️ 類別比例 (圓餅圖)", "📅 每日趨勢 (折線圖)", "📊 收支對比 (長條圖)"])
         
         with tab1:
@@ -133,16 +156,17 @@ if os.path.exists(FILE_NAME):
                 fig_pie = px.pie(cate_chart, values="金額", names="類別", hole=0.3, color_discrete_sequence=px.colors.qualitative.Pastel)
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
-                st.info("當前篩選範圍內沒有支出數據，無法產生圓餅圖。")
+                st.info("當前篩選範圍內沒有支出數據。")
                 
         with tab2:
             if not expense_df.empty:
                 st.write("#### 本月每日花費走勢曲線")
                 df_trend = expense_df.groupby(expense_df['日期'].dt.strftime('%Y-%m-%d'))["金額"].sum().reset_index()
+                # 這裡加上了動畫線條平滑化 (spline) 效果
                 fig_line = px.line(df_trend, x="日期", y="金額", markers=True, line_shape="spline")
                 st.plotly_chart(fig_line, use_container_width=True)
             else:
-                st.info("當前篩選範圍內沒有支出數據，無法產生趨勢圖。")
+                st.info("當前篩選範圍內沒有支出數據。")
                 
         with tab3:
             st.write("#### 總收入與總支出直觀對比")
@@ -155,11 +179,9 @@ if os.path.exists(FILE_NAME):
             
         # ================= 📋 全功能 Excel 編輯與刪除區 =================
         st.write("---")
-        st.subheader("📋 帳目歷史明細 (雙擊格子可任意更改所有變數)")
-        st.caption("💡 提示：此表格內包含所有變數。你可以自由雙擊「項目名稱」、「金額」、「類別」或「類型」進行修改。若要刪除，選取該行最左側按鍵盤 Delete 即可。改完請務必按下方儲存。")
+        st.subheader("📋 帳目歷史明細")
         
         df['原始索引'] = df.index
-        
         df_filtered_edit = df.copy()
         df_filtered_edit['臨時日期'] = pd.to_datetime(df_filtered_edit['日期'])
         df_filtered_edit['臨時月份'] = df_filtered_edit['臨時日期'].dt.strftime('%Y-%m')
@@ -172,14 +194,13 @@ if os.path.exists(FILE_NAME):
         df_filtered_edit = df_filtered_edit.drop(columns=['臨時日期', '臨時月份'])
         df_filtered_edit = df_filtered_edit.iloc[::-1].reset_index(drop=True)
         
-        # 啟用全變數資料編輯器
         edited_df = st.data_editor(
             df_filtered_edit,
             column_config={
                 "原始索引": None,
                 "日期": st.column_config.TextColumn("消費日期 (YYYY-MM-DD)"),
                 "類型": st.column_config.SelectboxColumn("帳目類型", options=["支出", "收入"], required=True),
-                "項目": st.column_config.TextColumn("項目名稱 (雙擊改字)"),
+                "項目": st.column_config.TextColumn("項目名稱"),
                 "類別": st.column_config.SelectboxColumn("項目類別", options=["飲食", "交通", "娛樂", "購物", "居住房租", "水電通訊", "醫療保健", "薪水", "獎金", "投資收益", "零用錢", "副業收入", "其他"]),
                 "金額": st.column_config.NumberColumn("金額 ($)", min_value=0.0, format="$ %.1f"),
                 "週期性": st.column_config.SelectboxColumn("帳目性質", options=["單次消費", "每月固定(如房租/薪水)", "每週固定"])
@@ -190,20 +211,17 @@ if os.path.exists(FILE_NAME):
         
         if st.button("💾 儲存所有變數修改", type="primary", use_container_width=True):
             full_df = pd.read_csv(FILE_NAME, dtype={"日期": str}, encoding='utf-8-sig')
-            
-            # 覆蓋修改的行
             for idx, row in edited_df.iterrows():
                 orig_idx = row['原始索引']
                 full_df.loc[orig_idx, ["日期", "類型", "項目", "類別", "金額", "週期性"]] = [row["日期"], row["類型"], row["項目"], row["類別"], row["金額"], row["週期性"]]
                 
-            # 處理被刪除的行
             current_visible_orig_indices = edited_df['原始索引'].tolist()
             for orig_idx in df_filtered_edit['原始索引'].tolist():
                 if orig_idx not in current_visible_orig_indices:
                     full_df = full_df.drop(orig_idx)
                     
             full_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
-            st.success("🎉 大功告成！所有變數、刪除或修改均已成功同步至雲端伺服器！")
+            st.success("🎉 修改與刪除均已成功更新！")
             st.rerun()
             
     else:
