@@ -93,4 +93,38 @@ if os.path.exists(FILE_NAME):
         if balance >= 0:
             col3.metric(label="🙌 當月淨結餘 (存下)", value=f"${balance:,.2f}")
         else:
-            col3.metric(label="⚠️ 當月淨結餘 (超支)", value=f"${balance
+            col3.metric(label="⚠️ 當月淨結餘 (超支)", value=f"${balance:,.2f}")
+        
+        # ------------------ 📈 新增圖表區塊 ------------------
+        st.write("---")
+        st.subheader("📈 支出數據圖表分析")
+        
+        # 篩選出只有支出的資料做圖表
+        expense_df = filtered_df[filtered_df['類型'] == "支出"]
+        
+        if not expense_df.empty:
+            tab1, tab2 = st.tabs(["🏷️ 類別比例 (圓餅圖)", "📅 每日趨勢 (折線圖)"])
+            
+            with tab1:
+                st.write("#### 各類別支出佔比")
+                # 按類別分組加總，並把類別設定為索引（最安全的全版本寫法）
+                cate_chart = expense_df.groupby("類別")["金額"].sum()
+                st.pie_chart(cate_chart, use_container_width=True)
+                
+            with tab2:
+                st.write("#### 每日花費走勢")
+                # 按日期分組加總，並把日期設定為索引
+                df_trend = expense_df.groupby("日期")["金額"].sum()
+                st.line_chart(df_trend, use_container_width=True)
+        else:
+            st.info("這個月份沒有任何支出紀錄，所以無法產生圖表喔！")
+            
+        st.write("---")
+        st.subheader("📋 帳目明細明細")
+        
+        # 美化表格並顯示
+        display_df = filtered_df.copy()
+        display_df['日期'] = display_df['日期'].dt.strftime('%Y-%m-%d')
+        st.dataframe(display_df[["日期", "類型", "項目", "類別", "金額"]], use_container_width=True)
+    else:
+        st.info("目前還沒有任何紀錄，快從左邊新增第一筆吧！")
