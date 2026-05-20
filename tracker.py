@@ -165,4 +165,75 @@ if os.path.exists(FILE_NAME):
             if not expense_df.empty:
                 cate_chart = expense_df.groupby("類別")["金額"].sum().reset_index()
                 fig_pie = px.pie(cate_chart, values="金額", names="類別", hole=0.3, color_discrete_sequence=px.colors.qualitative.Pastel)
-                fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height
+                fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=250) # 縮小圖表高度適合手機
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("沒有支出數據。")
+                
+        with tab2:
+            if not expense_df.empty:
+                df_trend = expense_df.groupby(expense_df['日期'].dt.strftime('%Y-%m-%d'))["金額"].sum().reset_index()
+                fig_line = px.line(df_trend, x="日期", y="金額", markers=True, line_shape="spline")
+                fig_line.update_layout(height=250)
+                st.plotly_chart(fig_line, use_container_width=True)
+            else:
+                st.info("沒有支出數據。")
+                
+        with tab3:
+            summary_data = pd.DataFrame({"財務類型": ["收入", "支出"], "金額 ($)": [total_income, total_expense]})
+            fig_bar = px.bar(summary_data, x="財務類型", y="金額 ($)", color="財務類型", color_discrete_map={"收入": "#2ecc71", "支出": "#e74c3c"})
+            fig_bar.update_layout(height=250)
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        # ================= 📋 全功能 Excel 編輯與刪除區 =================
+        st.write("---")
+        st.subheader("📋 帳目歷史明細")
+        st.caption("💡 提示：橫向滑動表格可看完整欄位，按兩下格子直接修改。")
+        
+        df['原始索引'] = df.index
+        df_filtered_edit = df.copy()
+        df_filtered_edit['臨時日期'] = pd.to_datetime(df_filtered_edit['日期'])
+        df_filtered_edit['臨時月份'] = df_filtered_edit['臨時日期'].dt.strftime('%Y-%m')
+        
+        if selected_month != "全部月份":
+            df_filtered_edit = df_filtered_edit[df_filtered_edit['臨時月份'] == selected_month]
+        if selected_category != "全部類別":
+            df_filtered_edit = df_filtered_edit[df_filtered_edit['類別'] == selected_category]
+            
+        df_filtered_edit = df_filtered_edit.drop(columns=['臨時日期', '臨時月份'])
+        df_filtered_edit = df_filtered_edit.iloc[::-1].reset_index(drop=True)
+        
+        # 適合手機滑動的資料編輯器
+        edited_df = st.data_editor(
+            df_filtered_edit,
+            column_config={
+                "原始索引": None,
+                "日期": st.column_config.TextColumn("日期"),
+                "類型": st.column_config.SelectboxColumn("類型", options=["支出", "收入"], required=True),
+                "項目": st.column_config.TextColumn("項目"),
+                "類別": st.column_config.SelectboxColumn("類別", options=["飲食", "交通", "娛樂", "購物", "居住房租", "水電通訊", "醫療保健", "薪水", "獎金", "投資收益", "零用錢", "副業收入", "其他"]),
+                "金額": st.column_config.NumberColumn("金額", min_value=0.0, format="$ %.0f"),
+                "週期性": st.column_config.SelectboxColumn("性質", options=["單次消費", "每月固定", "每週固定"])
+            },
+            use_container_width=True,
+            num_rows="dynamic",
+            height=300 # 限制高度，防止手機滑不到底部
+        )
+        
+        if st.button("💾 儲存所有修改", type="primary", use_container_width=True):
+            full_df = pd.read_csv(FILE_NAME, dtype={"日期": str}, encoding='utf-8-sig')
+            for idx, row in edited_df.iterrows():
+                orig_idx = row['原始索引']
+                full_df.loc[orig_idx, ["日期", "類型", "項目", "類別", "金額", "週期性"]] = [row["日期"], row["類型"], row["項目"], row["類別"], row["金額"], row["週期性"]]
+                
+            current_visible_orig_indices = edited_df['原始索引'].tolist()
+            for orig_idx in df_filtered_edit['原始索引'].tolist():
+                if orig_idx not in current_visible_orig_indices:
+                    full_df = full_df.drop(orig_idx)
+                    
+            full_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
+            st.success("🎉 修改已儲存！")
+            st.rerun()
+            
+    else:
+        st.info("目前沒有紀錄，快新增第一筆吧！")
