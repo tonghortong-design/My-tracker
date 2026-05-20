@@ -93,4 +93,13 @@ if os.path.exists(FILE_NAME):
         
         # 結餘如果是正的顯示綠色（或正常顏色），負的提醒
         if balance >= 0:
-            col3.metric(label="🙌 當
+            col3.metric(label="🙌 當月淨結餘 (存下)", value=f"${balance:,.2f}")
+        else:
+            col3.metric(label="⚠️ 當月淨結餘 (超支)", value=f"${balance:,.2f}")
+        
+        # 美化表格並顯示
+        display_df = filtered_df.copy()
+        display_df['日期'] = display_df['日期'].dt.strftime('%Y-%m-%d')
+        st.dataframe(display_df[["日期", "類型", "項目", "類別", "金額"]], use_container_width=True)
+    else:
+        st.info("目前還沒有任何紀錄，快從左邊新增第一筆吧！")
