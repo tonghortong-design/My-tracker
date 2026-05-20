@@ -48,6 +48,7 @@ if submit_button:
                                 columns=["日期", "類型", "項目", "類別", "金額"])
         new_data.to_csv(FILE_NAME, mode='a', header=False, index=False, encoding='utf-8-sig')
         st.sidebar.success(f"✅ 成功記錄{type_input}：{item_input} ${amount_input}")
+        st.rerun()
 
 # 主畫面：讀取與顯示資料
 if os.path.exists(FILE_NAME):
@@ -59,7 +60,6 @@ if os.path.exists(FILE_NAME):
     if not df.empty:
         st.subheader("📊 歷史帳目查看")
         
-        # 確保日期格式正確
         df['日期'] = pd.to_datetime(df['日期'])
         df['月份'] = df['日期'].dt.strftime('%Y-%m')
         df['金額'] = df['金額'].astype(float)
@@ -86,7 +86,7 @@ if os.path.exists(FILE_NAME):
         else:
             col3.metric(label="⚠️ 當月淨結餘 (超支)", value=f"${balance:,.2f}")
         
-        # ------------------ 📈 圖表區塊 (改用 Plotly 100% 穩定版) ------------------
+        # ------------------ 📈 圖表區塊 ------------------
         st.write("---")
         st.subheader("📈 支出數據圖表分析")
         
@@ -98,7 +98,6 @@ if os.path.exists(FILE_NAME):
             with tab1:
                 st.write("#### 各類別支出佔比")
                 cate_chart = expense_df.groupby("類別")["金額"].sum().reset_index()
-                # 使用 plotly 畫出有動畫效果的進階圓餅圖，絕對不會報錯
                 fig_pie = px.pie(cate_chart, values="金額", names="類別", hole=0.3)
                 fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10))
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -106,18 +105,47 @@ if os.path.exists(FILE_NAME):
             with tab2:
                 st.write("#### 每日花費走勢")
                 df_trend = expense_df.groupby(expense_df['日期'].dt.strftime('%Y-%m-%d'))["金額"].sum().reset_index()
-                # 使用 plotly 畫折線圖
-                fig_line = px.line(df_trend, x="日期", y="金額", markers=True)
+                fig_line = px.line(df_trend, x="記帳日期", y="金額", markers=True)
                 st.plotly_chart(fig_line, use_container_width=True)
         else:
             st.info("當前篩選範圍內沒有任何支出紀錄，無法產生圖表。")
             
         st.write("---")
-        st.subheader("📋 帳目明細")
+        st.subheader("📋 帳目明細與刪除")
         
-        # 顯示表格
-        display_df = filtered_df.copy()
+        # 給原始的 df 建立一個暫時的索引 ID（用來精準刪除某一行）
+        df['原始索引'] = df.index
+        
+        # 再次過濾要顯示的部分
+        if selected_month != "全部":
+            display_df = df[df['月份'] == selected_month].copy()
+        else:
+            display_df = df.copy()
+            
         display_df['日期'] = display_df['日期'].dt.strftime('%Y-%m-%d')
-        st.dataframe(display_df[["日期", "類型", "項目", "類別", "金額"]].sort_values(by="日期", ascending=False), use_container_width=True)
+        display_df = display_df.sort_values(by="日期", ascending=False)
+        
+        # 用循環一行一行印出資料，並在後面加一個刪除按鈕
+        for idx, row in display_df.iterrows():
+            # 用小區塊美化每行外觀
+            with st.container():
+                c1, c2, c3, c4, c5 = st.columns([2, 1, 3, 2, 1])
+                c1.write(f"📅 {row['日期']}")
+                # 收入用綠色、支出用紅色標記
+                if row['類型'] == "收入":
+                    c2.markdown("🟢")
+                else:
+                    c2.markdown("🔴")
+                c3.write(f"**{row['項目']}** ({row['類別']})")
+                c4.write(f"${float(row['金額']):,.1f}")
+                
+                # 刪除按鈕
+                if c5.button("🗑️", key=f"del_{row['原始索引']}"):
+                    # 讀取完整資料，刪除該行後存回 CSV
+                    full_df = pd.read_csv(FILE_NAME, encoding='utf-8-sig')
+                    full_df = full_df.drop(row['原始索引'])
+                    full_df.to_csv(FILE_NAME, index=False, encoding='utf-8-sig')
+                    st.success("刪除成功！正在重整...")
+                    st.rerun()
     else:
         st.info("目前還沒有任何紀錄，快從左邊新增第一筆吧！")
